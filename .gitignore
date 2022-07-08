@@ -1,0 +1,5 @@
+.ipynb_checkopints/
+env.py
+*.csv
+notes
+.ipynb_checkpoints/
