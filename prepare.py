@@ -1,4 +1,9 @@
-def prep(df)
+import pandas as pd
+import numpy as np
+
+def wrangle_data():
+
+    df = pd.read_csv('data.csv')
     
     # define target column
     target = 'newconstructionyn'
