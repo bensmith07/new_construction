@@ -50,7 +50,7 @@ def wrangle_data():
                                 0, df.garageyn) 
 
     # dropping columns
-    cols_to_drop = ['stories', 'lotfeatures'] 
+    cols_to_drop = ['lotfeatures'] 
     df = df.drop(columns=cols_to_drop)
 
     # imputing median
@@ -65,11 +65,37 @@ def wrangle_data():
     for col in cols_to_drop_rows:
         df = df[df[col].notnull()]
 
+    # imputing "stories" based on info in "architecturalstyle"
+
+    # create a new column which bases number of stories on "architecturalstyle" info
+    def get_stories_to_fillna(archstyle):
+        if 'One Story' in archstyle:
+            return 1
+        elif 'Two Story' in archstyle:
+            return 2
+        elif '3 or More' in archstyle:
+            return 3
+        else:
+            return np.nan
+    df['stories_to_fillna'] = df.architecturalstyle.apply(get_stories_to_fillna)
+    # fill null values in stories column with the newly created stories_to_fillna column
+    df['stories'] = df.stories.fillna(df.stories_to_fillna)
+    # dropping rows where "stories" is still null
+    df = df[df.stories.notnull()]
+    # getting rid of the temporary "stories_to_fillna" column
+    df = df.drop(columns=['stories_to_fillna'])
+
+    #############################################
+    # SEPARATING FOR-SALE AND FOR-RENT LISTINGS #
+    #############################################
+
     # separating rentals vs. for-sale listings
     rent_df = df[df.propertytype == 'Residential Rental']
     sale_df = df[df.propertytype == 'Residential']
-    # drop irrelevant column
-    sale_df = sale_df.drop(columns='totalactualrent')
+
+    # drop irrelevant columns
+    sale_df = sale_df.drop(columns=['totalactualrent', 'propertytype'])
+    rent_df = rent_df.drop(columns=['propertytype'])
 
     ########################
     # ADJUSTING DATA TYPES #
@@ -89,6 +115,11 @@ def wrangle_data():
     # listingcontractdate from string to pandas datetime
     sale_df['listingcontractdate'] = pd.to_datetime(sale_df.listingcontractdate)
     rent_df['listingcontractdate'] = pd.to_datetime(rent_df.listingcontractdate)
+
+    # yearbuilt from float to int
+    sale_df['yearbuilt'] = sale_df.yearbuilt.astype(int)
+    rent_df['yearbuilt'] = rent_df.yearbuilt.astype(int)
+
 
     #######################
     # FEATURE ENGINEERING #
@@ -119,19 +150,34 @@ def wrangle_data():
     rent_df['listing_dayofmonth'] = rent_df.listingcontractdate.dt.day
 
     # weekday of listing
-    sale_df['listing_dayofweek'] = sale_df.listingcontractdate.apply(lambda timestamp: str(timestamp.weekday()) 
-                                                                + '-' 
-                                                                + timestamp.strftime('%a'))
-    rent_df['listing_dayofweek'] = rent_df.listingcontractdate.apply(lambda timestamp: str(timestamp.weekday()) 
-                                                                + '-' 
-                                                                + timestamp.strftime('%a'))
+    sale_df['listing_dayofweek'] = sale_df.listingcontractdate.apply(lambda x: x.strftime('%a'))
+    rent_df['listing_dayofweek'] = rent_df.listingcontractdate.apply(lambda x: x.strftime('%a'))
+
+    sale_df['listing_dayofweek'] = pd.Categorical(sale_df.listing_dayofweek,
+                                                categories=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                                                ordered=True)
+    rent_df['listing_dayofweek'] = pd.Categorical(rent_df.listing_dayofweek,
+                                                categories=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                                                ordered=True)
     # listed on the weekend
     sale_df['listed_on_weekend'] = np.where(sale_df.listing_dayofweek.isin(['5-Sat', '6-Sun']), True, False)
     rent_df['listed_on_weekend'] = np.where(rent_df.listing_dayofweek.isin(['5-Sat', '6-Sun']), True, False)
 
-    # PRICE PER SQFT #
+    # BUILD YEAR FEATURES # 
+    #######################
+
+    # years since build year
+    sale_df['years_since_build'] = sale_df.listingcontractdate.apply(lambda x: x.year) - sale_df.yearbuilt
+    rent_df['years_since_build'] = rent_df.listingcontractdate.apply(lambda x: x.year) - rent_df.yearbuilt
+
+    # built within two calendar years of listing (i.e. this year or last)
+    sale_df['built_last_two_years'] = sale_df.years_since_build <= 1
+    rent_df['built_last_two_years'] = rent_df.years_since_build <= 1
+
+    # PRICE FEATURES #
     ##################
 
+    # price-per-square-foot
     sale_df['originallistprice_persqft'] = round(sale_df.originallistprice / sale_df.livingarea, 0)
     rent_df['originallistprice_persqft'] = round(rent_df.originallistprice / rent_df.livingarea, 2)
     rent_df['totalactualrent_persqft'] = round(rent_df.totalactualrent / rent_df.livingarea, 2)
@@ -298,6 +344,24 @@ def wrangle_data():
     cols = ['architecturalstyle', 'archstyle_onestory', 'archstyle_twostory', 'archstyle_3ormore']
     sale_df = sale_df.drop(columns=cols)
     rent_df = rent_df.drop(columns=cols)
+
+
+    # LOT SIZE FEATURES #
+    #####################
+
+    # creating a boolean column for whether a property was listed with a negative value for lot size
+    # This is likely an error in the listing, but could still be useful info, 
+    # since only new construction was listed with negative values.
+    sale_df['lotsizearea_listed_negative'] = (sale_df.lotsizearea < 0)
+    rent_df['lotsizearea_listed_negative'] = (rent_df.lotsizearea < 0)
+
+    # correcting the error by taking the absolute value of the lot size
+    sale_df['lotsizearea'] = sale_df.lotsizearea.abs()
+    rent_df['lotsizearea'] = rent_df.lotsizearea.abs()
+
+    # lot size 0.2 or less
+    sale_df['lotsizearea_small'] = sale_df.lotsizearea <= 0.2
+    rent_df['lotsizearea_small'] = rent_df.lotsizearea <= 0.2
 
     return sale_df, rent_df
 
