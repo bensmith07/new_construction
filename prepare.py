@@ -1,16 +1,132 @@
 import pandas as pd
 import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
 random_state = 42
+target = 'newconstructionyn'
 
 def split_data(df):
-    train, test = train_test_split(df, test_size=.3, random_state=random_state)
+    train, test = train_test_split(df, test_size=.3, 
+                                    random_state=random_state, stratify=df[target])
     return train, test
 
-def wrangle_data():
 
-    df = pd.read_csv('data.csv')
+def wrangle_data(filename='data.csv'):
+    # TODO: add "previous_transaction"
+    '''
+    This function pulls in San Antonio MLS listings data from a local csv 
+    with a given filename and applies all necessary
+    transformations to the data for future exploration and modeling. 
 
-    # define target column
+    Returns 3 dataframes in the following order: 
+    1. 'df' (the whole dataset)
+    2. 'sale_df' (for-sale listings only)
+    3. 'rent_df' (for-rent listings only)
+    
+    These transformations include:
+
+    REMOVING IRRELEVANT DATA
+
+    - Removing the following columns due to irrelevancy to the problem at hand:
+        - any column where there is only one unique value
+        - city, postal_code, and census_tract
+        - standardstatus, mlsstatus, contractstatuschangedate, purchasecontractdate, closedate,
+          daysonmarket, closeprice, listprice
+
+    - Removing the following columns due to an abundance of null values:
+        - lotfeatures, totalactualrent
+    
+    HANDLING MISSING VALUES
+
+    - Imputing missing values for the following columns:
+        - garageyn (imputed based on information found in parkingfeatures column)
+        - stories (based on information found in architecturalstyle column) 
+        - lotsizearea (imputing with median)
+
+    - Removing any other rows that remain with missing values 
+      (at this point no column had more than 15 nulls)
+
+    ADJUSTING DATA TYPES
+
+    - address_id: integer >> string
+    - newconstructionyn: float (0,1) >> boolean
+    - garageyn: float (0,1) >> boolean
+    - listingcontractdate: string >> pandas timestamp
+
+    DATA CLEANING/PREP
+    - propertysubtype: combining "Single Family Detached" and "Single Family Residence Detached"
+                       to one single value
+    - lotsizearea: correcting negative lotsize values (likely listed in error)
+                   by taking the absolute value
+
+    ENGINEERING NEW FEATURES
+
+    including:
+    (for definitions, see data dictionary in README.md)
+    - listing_month
+    - listing_dayofmonth
+    - listing_dayofweek
+    - listed_on_weekend
+    - years_since_build
+    - built_last_two_years
+    - parkingfeatures_attached
+    - parkingfeatures_detached
+    - parkingfeatures_oversized
+    - parkingfeatures_converted
+    - parkingfeatures_sideentry
+    - parkingfeatures_rearentry
+    - parkingfeatures_tandem
+    - parkingfeatures_golfcart
+    - heating_central
+    - heating_naturalgas
+    - heating_electric
+    - heating_heatpump
+    - heating_2units
+    - heating_1unit
+    - heating_zoned
+    - heating_other
+    - heating_floorfurnace
+    - heating_solar
+    - heating_propaneowned
+    - heating_none
+    - heating_windowunit
+    - cooling_central
+    - cooling_winddowwall
+    - cooling_heatpump
+    - cooling_zoned
+    - central_cooling_units
+    - winddowwall_cooling_units
+    - archstyle_traditional
+    - archstyle_splitlevel
+    - archstyle_ranch
+    - archstyle_texashillcountry
+    - archstyle_craftsman
+    - archstyle_other
+    - archstyle_colonial
+    - archstyle_spanish
+    - archstyle_manufacturedhome-singlewide
+    - archstyle_a-frame
+    - lotsizearea_listed_negative
+    - lotsizearea_small
+    - originallistprice_persqft
+    - originallistprice_scaled
+    - originallistprice_scaled_persqft
+    - previously_listed
+
+    SEPARATING FOR-RENT AND FOR-SALE
+
+    - Due to the incomparable ranges of the monthly rent prices
+      and the property purchase prices found in the same column: 
+      we created separate dataframe 'sale_df' and 'rent_df' with
+      for-sale properties and for-rent properties respectively. 
+      These separate dataframes can be used for exploration and 
+      potentially modeling, while we also maintain the original 
+      dataset in it's entirety as the 'df' variable.
+    '''
+
+    df = pd.read_csv(filename)
+
+    # define target column for easier reference
     target = 'newconstructionyn'
 
     ############################
@@ -55,7 +171,7 @@ def wrangle_data():
                                 0, df.garageyn) 
 
     # dropping columns
-    cols_to_drop = ['lotfeatures'] 
+    cols_to_drop = ['lotfeatures', 'totalactualrent'] 
     df = df.drop(columns=cols_to_drop)
 
     # imputing median
@@ -90,41 +206,19 @@ def wrangle_data():
     # getting rid of the temporary "stories_to_fillna" column
     df = df.drop(columns=['stories_to_fillna'])
 
-    #############################################
-    # SEPARATING FOR-SALE AND FOR-RENT LISTINGS #
-    #############################################
-
-    # separating rentals vs. for-sale listings
-    rent_df = df[df.propertytype == 'Residential Rental']
-    sale_df = df[df.propertytype == 'Residential']
-
-    # drop irrelevant columns
-    sale_df = sale_df.drop(columns=['totalactualrent', 'propertytype'])
-    rent_df = rent_df.drop(columns=['propertytype'])
-
     ########################
     # ADJUSTING DATA TYPES #
     ########################
 
     # address_id from int to string
-    sale_df['address_id'] = sale_df.address_id.astype(str)
-    rent_df['address_id'] = rent_df.address_id.astype(str)
+    df['address_id'] = df.address_id.astype(str)
 
     # garageyn and newconstructionyn to from float to boolean
-    sale_df['newconstructionyn'] = sale_df.newconstructionyn.astype(bool)
-    rent_df['newconstructionyn'] = rent_df.newconstructionyn.astype(bool)
-
-    sale_df['garageyn'] = sale_df.garageyn.astype(bool)
-    rent_df['garageyn'] = rent_df.garageyn.astype(bool)
+    df['newconstructionyn'] = df.newconstructionyn.astype(bool)
+    df['garageyn'] = df.garageyn.astype(bool)
 
     # listingcontractdate from string to pandas datetime
-    sale_df['listingcontractdate'] = pd.to_datetime(sale_df.listingcontractdate)
-    rent_df['listingcontractdate'] = pd.to_datetime(rent_df.listingcontractdate)
-
-    # yearbuilt from float to int
-    sale_df['yearbuilt'] = sale_df.yearbuilt.astype(int)
-    rent_df['yearbuilt'] = rent_df.yearbuilt.astype(int)
-
+    df['listingcontractdate'] = pd.to_datetime(df.listingcontractdate)
 
     #######################
     # FEATURE ENGINEERING #
@@ -134,58 +228,43 @@ def wrangle_data():
     ####################
 
     # combing "Single Family Detached" and "Single Family Residence Detached" into one value: "Single Family Detached"
-    sale_df['propertysubtype'] = np.where(sale_df.propertysubtype == 'Single Family Residence Detached', 
-                                        'Single Family Detached', sale_df.propertysubtype)
-    rent_df['propertysubtype'] = np.where(rent_df.propertysubtype == 'Single Family Residence Detached', 
-                                      'Single Family Detached', rent_df.propertysubtype)
+    df['propertysubtype'] = np.where(df.propertysubtype == 'Single Family Residence Detached', 
+                                    'Single Family Detached', df.propertysubtype)
 
     # LISTING DATE FEATURES #
     #########################
 
-    # quarter of listing
-    sale_df['listing_quarter'] = sale_df.listingcontractdate.dt.quarter
-    rent_df['listing_quarter'] = rent_df.listingcontractdate.dt.quarter
-
     # month of listing
-    sale_df['listing_month'] = sale_df.listingcontractdate.dt.month
-    rent_df['listing_month'] = rent_df.listingcontractdate.dt.month
+    df['listing_month'] = df.listingcontractdate.dt.month
 
     # date of listing
-    sale_df['listing_dayofmonth'] = sale_df.listingcontractdate.dt.day
-    rent_df['listing_dayofmonth'] = rent_df.listingcontractdate.dt.day
+    df['listing_dayofmonth'] = df.listingcontractdate.dt.day
 
-    # weekday of listing
-    sale_df['listing_dayofweek'] = sale_df.listingcontractdate.apply(lambda x: x.strftime('%a'))
-    rent_df['listing_dayofweek'] = rent_df.listingcontractdate.apply(lambda x: x.strftime('%a'))
+    # day of week of listing
+    df['listing_dayofweek'] = df.listingcontractdate.apply(lambda x: x.weekday())
 
-    sale_df['listing_dayofweek'] = pd.Categorical(sale_df.listing_dayofweek,
-                                                categories=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                                                ordered=True)
-    rent_df['listing_dayofweek'] = pd.Categorical(rent_df.listing_dayofweek,
-                                                categories=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                                                ordered=True)
     # listed on the weekend
-    sale_df['listed_on_weekend'] = np.where(sale_df.listing_dayofweek.isin(['5-Sat', '6-Sun']), True, False)
-    rent_df['listed_on_weekend'] = np.where(rent_df.listing_dayofweek.isin(['5-Sat', '6-Sun']), True, False)
+    df['listed_on_weekend'] = np.where(df.listing_dayofweek.isin([5, 6]), True, False)
+
+    # was there a previous listing for this property
+    min_dates = (
+             pd.DataFrame(df.groupby('address_id').listingcontractdate.min())
+             .reset_index()
+             .rename(columns={'listingcontractdate': 'firstlistingdate'})
+    )
+    df = df.merge(min_dates, how='left', on='address_id')
+    df['previously_listed'] = df.listingcontractdate != df.firstlistingdate
+    df = df.drop(columns='firstlistingdate')
+
 
     # BUILD YEAR FEATURES # 
     #######################
 
     # years since build year
-    sale_df['years_since_build'] = sale_df.listingcontractdate.apply(lambda x: x.year) - sale_df.yearbuilt
-    rent_df['years_since_build'] = rent_df.listingcontractdate.apply(lambda x: x.year) - rent_df.yearbuilt
+    df['years_since_build'] = df.listingcontractdate.apply(lambda x: x.year) - df.yearbuilt
 
     # built within two calendar years of listing (i.e. this year or last)
-    sale_df['built_last_two_years'] = sale_df.years_since_build <= 1
-    rent_df['built_last_two_years'] = rent_df.years_since_build <= 1
-
-    # PRICE FEATURES #
-    ##################
-
-    # price-per-square-foot
-    sale_df['originallistprice_persqft'] = round(sale_df.originallistprice / sale_df.livingarea, 0)
-    rent_df['originallistprice_persqft'] = round(rent_df.originallistprice / rent_df.livingarea, 2)
-    rent_df['totalactualrent_persqft'] = round(rent_df.totalactualrent / rent_df.livingarea, 2)
+    df['built_last_two_years'] = df.years_since_build <= 1
 
 
     # PARKING FEATURES #
@@ -209,38 +288,20 @@ def wrangle_data():
         else:
             return 2
 
-    sale_df['garage_size'] = sale_df.parkingfeatures.apply(get_garage_size)
-    rent_df['garage_size'] = rent_df.parkingfeatures.apply(get_garage_size)
+    df['garage_size'] = df.parkingfeatures.apply(get_garage_size)
 
     # boolean columns for each listed parking feature
-
-    sale_df['parkingfeatures_attached'] = sale_df.parkingfeatures.str.contains('Attached')
-    rent_df['parkingfeatures_attached'] = rent_df.parkingfeatures.str.contains('Attached')
-
-    sale_df['parkingfeatures_detached'] = sale_df.parkingfeatures.str.contains('Detached')
-    rent_df['parkingfeatures_detached'] = rent_df.parkingfeatures.str.contains('Detached')
-
-    sale_df['parkingfeatures_oversized'] = sale_df.parkingfeatures.str.contains('Oversized')
-    rent_df['parkingfeatures_oversized'] = rent_df.parkingfeatures.str.contains('Oversized')
-
-    sale_df['parkingfeatures_converted'] = sale_df.parkingfeatures.str.contains('Converted')
-    rent_df['parkingfeatures_converted'] = rent_df.parkingfeatures.str.contains('Converted')
-
-    sale_df['parkingfeatures_sideentry'] = sale_df.parkingfeatures.str.contains('Side Entry')
-    rent_df['parkingfeatures_sideentry'] = rent_df.parkingfeatures.str.contains('Side Entry')
-
-    sale_df['parkingfeatures_rearentry'] = sale_df.parkingfeatures.str.contains('Rear Entry')
-    rent_df['parkingfeatures_rearentry'] = rent_df.parkingfeatures.str.contains('Rear Entry')
-
-    sale_df['parkingfeatures_tandem'] = sale_df.parkingfeatures.str.contains('Tandem')
-    rent_df['parkingfeatures_tandem'] = rent_df.parkingfeatures.str.contains('Tandem')
-
-    sale_df['parkingfeatures_golfcart'] = sale_df.parkingfeatures.str.contains('Golf Cart')
-    rent_df['parkingfeatures_golfcart'] = rent_df.parkingfeatures.str.contains('Golf Cart')
+    df['parkingfeatures_attached'] = df.parkingfeatures.str.contains('Attached')
+    df['parkingfeatures_detached'] = df.parkingfeatures.str.contains('Detached')
+    df['parkingfeatures_oversized'] = df.parkingfeatures.str.contains('Oversized')
+    df['parkingfeatures_converted'] = df.parkingfeatures.str.contains('Converted')
+    df['parkingfeatures_sideentry'] = df.parkingfeatures.str.contains('Side Entry')
+    df['parkingfeatures_rearentry'] = df.parkingfeatures.str.contains('Rear Entry')
+    df['parkingfeatures_tandem'] = df.parkingfeatures.str.contains('Tandem')
+    df['parkingfeatures_golfcart'] = df.parkingfeatures.str.contains('Golf Cart')
 
     # drop original parkingfeatures column
-    sale_df = sale_df.drop(columns=['parkingfeatures'])
-    rent_df = rent_df.drop(columns=['parkingfeatures'])
+    df = df.drop(columns=['parkingfeatures'])
 
 
     # HEATING FEATURES # 
@@ -248,7 +309,12 @@ def wrangle_data():
 
     # create boolean columns for each listed heating feature
 
+    # a one-time-use function
     def get_unique_heating_features(df):
+        '''
+        takes in the original "heating" feature that lists multiple attributes in one column,
+        separates the individual attributes and returns a list of unique attributes
+        '''
         heating_features = ''
         for feature in df.heating.unique():
             heating_features += (feature + ',')
@@ -257,37 +323,32 @@ def wrangle_data():
         heating_features = heating_features[heating_features != '']
         return heating_features
 
-    for feature in get_unique_heating_features(sale_df):
-        sale_df[f'heating_{feature.lower().replace(" ", "")}'] = sale_df.heating.str.contains(feature)
-        
-    for feature in get_unique_heating_features(rent_df):
-        rent_df[f'heating_{feature.lower().replace(" ", "")}'] = rent_df.heating.str.contains(feature)
+    # for each unique attribute, create a boolean column 
+    # based on whether the "heating" column contains that attribute
+    for feature in get_unique_heating_features(df):
+        df[f'heating_{feature.lower().replace(" ", "")}'] = df.heating.str.contains(feature)
 
     # drop original "heating" column
-    sale_df = sale_df.drop(columns=['heating'])
-    rent_df = rent_df.drop(columns=['heating'])
+    df = df.drop(columns=['heating'])
 
-    
+
     # COOLING FEATURES #
     ####################
 
     # create boolean columns for cooling features
-
-    sale_df['cooling_central'] = sale_df.cooling.str.contains('Central')
-    rent_df['cooling_central'] = rent_df.cooling.str.contains('Central')
-
-    sale_df['cooling_windowwall'] = sale_df.cooling.str.contains('Window/Wall')
-    rent_df['cooling_windowwall'] = rent_df.cooling.str.contains('Window/Wall')
-
-    sale_df['cooling_heatpump'] = sale_df.cooling.str.contains('Heat Pump')
-    rent_df['cooling_heatpump'] = rent_df.cooling.str.contains('Heat Pump')
-
-    sale_df['cooling_zoned'] = sale_df.cooling.str.contains('Zoned')
-    rent_df['cooling_zoned'] = rent_df.cooling.str.contains('Zoned')
+    df['cooling_central'] = df.cooling.str.contains('Central')
+    df['cooling_windowwall'] = df.cooling.str.contains('Window/Wall')
+    df['cooling_heatpump'] = df.cooling.str.contains('Heat Pump')
+    df['cooling_zoned'] = df.cooling.str.contains('Zoned')
 
     # create numerical columns for numbers of Central and Window/Wall cooling units
 
+    # a one-time-use function
     def get_central_cooling_units(cooling_features):
+        '''
+        takes in the original "cooling" feature which lists several attributes in one column
+        returns a number representing how many central cooling units are listed
+        '''
         if 'Three+ Central' in cooling_features:
             return 3
         elif 'Two Central' in cooling_features:
@@ -300,11 +361,16 @@ def wrangle_data():
         # so we will impute a 1 where data is unavailable
         else:
             return 1
-        
-    sale_df['central_cooling_units'] = sale_df.cooling.apply(get_central_cooling_units)
-    rent_df['central_cooling_units'] = rent_df.cooling.apply(get_central_cooling_units)
 
+    # apply the function above to the "cooling" column to create the new feature
+    df['central_cooling_units'] = df.cooling.apply(get_central_cooling_units)
+
+    # a one-time-use function
     def get_windowwall_units(cooling_features):
+        '''
+        takes in the original "cooling" feature which lists several attributes in one column
+        returns a number representing how many window/wall cooling units are listed
+        '''
         if '3+ Window/Wall' in cooling_features:
             return 3
         elif 'Two Window/Wall' in cooling_features:
@@ -316,12 +382,11 @@ def wrangle_data():
         else:
             return 0
 
-    sale_df['windowwall_cooling_units'] = sale_df.cooling.apply(get_windowwall_units)
-    rent_df['windowwall_cooling_units'] = rent_df.cooling.apply(get_windowwall_units)
+    # apply the function above to create the new feature
+    df['windowwall_cooling_units'] = df.cooling.apply(get_windowwall_units)
 
     # drop the original "cooling" column
-    sale_df = sale_df.drop(columns=['cooling'])
-    rent_df = rent_df.drop(columns=['cooling'])
+    df = df.drop(columns=['cooling'])
 
 
     # ARCHITECTURAL STYLE FEATURES #
@@ -329,7 +394,12 @@ def wrangle_data():
 
     # creating a boolean column for each of the listed architectural style features
 
+    # a one-time-use function
     def get_unique_archstyle_features(df):
+        '''
+        takes in the original "architecturalstyle" column that lists multiple attributes in one column, 
+        separates the individual attributes and returns a list of unique attributes
+        '''
         archstyle_features = ''
         for feature in df.architecturalstyle.unique():
             archstyle_features += (feature + ',')
@@ -338,37 +408,73 @@ def wrangle_data():
         archstyle_features = archstyle_features[archstyle_features != '']
         return archstyle_features
 
+    # for each unique attribute, create a boolean column indicating whether the 
+    # # architectural style column contains that attribute
     for feature in get_unique_archstyle_features(df):
-        sale_df[f'archstyle_{feature.lower().replace(" ", "")}'] = sale_df.architecturalstyle.str.contains(feature)
-        
-    for feature in get_unique_archstyle_features(df):
-        rent_df[f'archstyle_{feature.lower().replace(" ", "")}'] = rent_df.architecturalstyle.str.contains(feature)
+        df[f'archstyle_{feature.lower().replace(" ", "")}'] = df.architecturalstyle.str.contains(feature)
 
     # drop the original architecturalstyle column
-    # and new columns that contain info about number of stories (redundant from "stories" column)
+    # as well as the new columns that contain info about number of stories (redundant from "stories" column)
     cols = ['architecturalstyle', 'archstyle_onestory', 'archstyle_twostory', 'archstyle_3ormore']
-    sale_df = sale_df.drop(columns=cols)
-    rent_df = rent_df.drop(columns=cols)
-
+    df = df.drop(columns=cols)
 
     # LOT SIZE FEATURES #
     #####################
 
     # creating a boolean column for whether a property was listed with a negative value for lot size
-    # This is likely an error in the listing, but could still be useful info, 
-    # since only new construction was listed with negative values.
-    sale_df['lotsizearea_listed_negative'] = (sale_df.lotsizearea < 0)
-    rent_df['lotsizearea_listed_negative'] = (rent_df.lotsizearea < 0)
+    # this is likely an error, but could still be useful info, since only new construction was listed with negative values
+    df['lotsizearea_listed_negative'] = (df.lotsizearea < 0)
 
     # correcting the error by taking the absolute value of the lot size
-    sale_df['lotsizearea'] = sale_df.lotsizearea.abs()
-    rent_df['lotsizearea'] = rent_df.lotsizearea.abs()
+    df['lotsizearea'] = df.lotsizearea.abs()
 
-    # lot size 0.2 or less
-    sale_df['lotsizearea_small'] = sale_df.lotsizearea <= 0.2
-    rent_df['lotsizearea_small'] = rent_df.lotsizearea <= 0.2
+    # create a boolean column for whether the lot size is 0.2 or less
+    df['lotsizearea_small'] = df.lotsizearea <= 0.2
 
-    return sale_df, rent_df
+
+    # PRICE FEATURES #
+    ##################
+
+    # price per SqFt
+    df['originallistprice_persqft'] = round(df.originallistprice / df.livingarea, 0)
+
+    # CREATING SCALED PRICE COLUMNS #
+    #################################
+    # this accommodates for the difference in scale for "originallistprice" between
+    # for-rent and for-sale listings.
+
+    # separating rentals vs. for-sale listings
+    rent_df = df[df.propertytype == 'Residential Rental']
+    sale_df = df[df.propertytype == 'Residential']
+    # drop irrelevant columns
+    sale_df = sale_df.drop(columns=['propertytype'])
+    rent_df = rent_df.drop(columns=['propertytype'])
+
+    # scale each category to a value between 0 and 1 based on the category's respective min and max values
+
+    scaler = MinMaxScaler()
+
+    sale_df['originallistprice_scaled'] = scaler.fit_transform(sale_df[['originallistprice']])
+    rent_df['originallistprice_scaled'] = scaler.fit_transform(rent_df[['originallistprice']])
+
+    sale_df['originallistprice_persqft_scaled'] = scaler.fit_transform(sale_df[['originallistprice_persqft']])
+    rent_df['originallistprice_persqft_scaled'] = scaler.fit_transform(rent_df[['originallistprice_persqft']])
+
+    # combine the sale and rental scaled price columns into one df
+    df2 = pd.concat([sale_df[['originallistprice_scaled', 'originallistprice_persqft_scaled']],
+                    rent_df[['originallistprice_scaled', 'originallistprice_persqft_scaled']]
+                    ]).sort_index()
+
+    # join the df with scaled columns back to the original df
+    df = pd.merge(df, df2, 
+                how='left', 
+                left_index=True, 
+                right_index=True)
+
+    
+
+
+    return df, sale_df, rent_df
 
 
 
