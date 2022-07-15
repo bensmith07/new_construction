@@ -1,5 +1,10 @@
 import pandas as pd
 import numpy as np
+random_state = 42
+
+def split_data(df):
+    train, test = train_test_split(df, test_size=.3, random_state=random_state)
+    return train, test
 
 def wrangle_data():
 

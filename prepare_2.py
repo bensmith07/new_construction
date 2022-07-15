@@ -1,9 +1,18 @@
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+random_state = 42
+target = 'newconstructionyn'
+
+def split_data(df):
+    train, test = train_test_split(df, test_size=.3, 
+                                    random_state=random_state, stratify=df[target])
+    return train, test
 
 
 def wrangle_data(filename='data.csv'):
+    # TODO: add "previous_transaction"
     '''
     This function pulls in San Antonio MLS listings data from a local csv 
     with a given filename and applies all necessary
@@ -54,7 +63,6 @@ def wrangle_data(filename='data.csv'):
 
     including:
     (for definitions, see data dictionary in README.md)
-    - listing_quarter
     - listing_month
     - listing_dayofmonth
     - listing_dayofweek
@@ -103,6 +111,7 @@ def wrangle_data(filename='data.csv'):
     - originallistprice_persqft
     - originallistprice_scaled
     - originallistprice_scaled_persqft
+    - previously_listed
 
     SEPARATING FOR-RENT AND FOR-SALE
 
@@ -225,9 +234,6 @@ def wrangle_data(filename='data.csv'):
     # LISTING DATE FEATURES #
     #########################
 
-    # quarter of listing
-    df['listing_quarter'] = df.listingcontractdate.dt.quarter
-
     # month of listing
     df['listing_month'] = df.listingcontractdate.dt.month
 
@@ -235,13 +241,21 @@ def wrangle_data(filename='data.csv'):
     df['listing_dayofmonth'] = df.listingcontractdate.dt.day
 
     # day of week of listing
-    df['listing_dayofweek'] = df.listingcontractdate.apply(lambda x: x.strftime('%a'))
-    df['listing_dayofweek'] = pd.Categorical(df.listing_dayofweek,
-                                            categories=['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                                            ordered=True)
+    df['listing_dayofweek'] = df.listingcontractdate.apply(lambda x: x.weekday())
 
     # listed on the weekend
-    df['listed_on_weekend'] = np.where(df.listing_dayofweek.isin(['5-Sat', '6-Sun']), True, False)
+    df['listed_on_weekend'] = np.where(df.listing_dayofweek.isin([5, 6]), True, False)
+
+    # was there a previous listing for this property
+    min_dates = (
+             pd.DataFrame(df.groupby('address_id').listingcontractdate.min())
+             .reset_index()
+             .rename(columns={'listingcontractdate': 'firstlistingdate'})
+    )
+    df = df.merge(min_dates, how='left', on='address_id')
+    df['previously_listed'] = df.listingcontractdate != df.firstlistingdate
+    df = df.drop(columns='firstlistingdate')
+
 
     # BUILD YEAR FEATURES # 
     #######################
@@ -456,6 +470,8 @@ def wrangle_data(filename='data.csv'):
                 how='left', 
                 left_index=True, 
                 right_index=True)
+
+    
 
 
     return df, sale_df, rent_df
